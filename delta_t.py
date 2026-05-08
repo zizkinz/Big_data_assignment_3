@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 from config import MONGO_URI, DB_NAME, CLEAN_COLLECTION, DELTA_COLLECTION
+import time
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
@@ -28,5 +29,15 @@ pipeline = [
     }
 ]
 
+start_time = time.perf_counter()
+
 result = db[CLEAN_COLLECTION].aggregate(pipeline, allowDiskUse=True)
-print("Delta-t complete")
+
+end_time = time.perf_counter()
+
+print(
+    f"Delta-t complete"
+    f"Took {end_time - start_time:.2f} seconds."
+)
+
+

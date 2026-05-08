@@ -6,5 +6,5 @@ CLEAN_COLLECTION = "positions_clean"
 DELTA_COLLECTION = "positions_dt"
 
 CSV_PATH = "./AIS_DATA/aisdk-2026-04-18.csv"
-BATCH_SIZE = 5000
-MAX_ROWS = 200000
+BATCH_SIZE = 100_000
+MAX_ROWS = None
