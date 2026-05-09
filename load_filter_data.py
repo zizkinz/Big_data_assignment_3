@@ -24,6 +24,28 @@ SEQUENCE_INVALID = {
 MMSI_REGEX = re.compile(r"^\d{9}$")
 
 
+def build_mongo_client():
+    return MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
+        retryWrites=True,
+    )
+
+
+def wait_for_mongo(timeout_seconds=120, poll_seconds=5):
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            client = build_mongo_client()
+            client.admin.command("ping")
+            client.close()
+            return True
+        except Exception:
+            time.sleep(poll_seconds)
+    return False
+
+
 def calculate_maritime_distance(lat1, lon1, lat2, lon2):
     radius_nm = 3440.065
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -186,7 +208,7 @@ def flush_insert_many(collection, docs):
 
 
 def load_worker(worker_id, task_queue, result_queue, column_map):
-    client = MongoClient(MONGO_URI)
+    client = build_mongo_client()
     db = client[DB_NAME]
     raw_col = db[RAW_COLLECTION]
 
@@ -317,7 +339,7 @@ def phase1_load_raw(input_files, column_map, num_workers):
 
 
 def phase2_build_clean_with_aggregation():
-    client = MongoClient(MONGO_URI)
+    client = build_mongo_client()
     db = client[DB_NAME]
     raw_col = db[RAW_COLLECTION]
     clean_col = db[CLEAN_COLLECTION]
@@ -413,7 +435,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cores", type=int, default=max(1, mp.cpu_count() - 1))
+    parser.add_argument("--cores", type=int, default=max(1, min(4, mp.cpu_count() - 1)))
     args = parser.parse_args()
 
     num_workers = args.cores
@@ -424,6 +446,10 @@ if __name__ == "__main__":
     input_files = [
         DATA_DIR / "aisdk-2026-04-18.csv",
     ]
+
+    for input_file in input_files:
+        if not input_file.exists():
+            raise FileNotFoundError(f"Input CSV not found: {input_file}")
 
     column_map = {
         "timestamp": "# Timestamp",
@@ -456,6 +482,10 @@ if __name__ == "__main__":
 
     print(f"System has {mp.cpu_count()} cores. Using {num_workers} worker processes.")
     print(f"Unified batch size from config: {BATCH_SIZE}")
+
+    print(f"Waiting for MongoDB at {MONGO_URI}...")
+    if not wait_for_mongo():
+        raise RuntimeError(f"MongoDB is not reachable at {MONGO_URI}")
 
     start_time1 = time.perf_counter()
     total_rows_read, total_seen_p1, total_inserted_p1 = phase1_load_raw(
