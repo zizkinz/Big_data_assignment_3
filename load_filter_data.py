@@ -26,9 +26,10 @@ MMSI_REGEX = re.compile(r"^\d{9}$")
 
 def build_mongo_client():
     return MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=10000,
-        connectTimeoutMS=10000,
+        "mongodb://127.0.0.1:27117/",  # hardcoded to bypass localhost DNS issue
+        serverSelectionTimeoutMS=60000,
+        connectTimeoutMS=30000,
+        socketTimeoutMS=60000,
         retryWrites=True,
     )
 
@@ -37,7 +38,7 @@ def wait_for_mongo(timeout_seconds=120, poll_seconds=5):
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         try:
-            client = build_mongo_client()
+            client = MongoClient('mongodb://127.0.0.1:27117/', serverSelectionTimeoutMS=10000)
             client.admin.command("ping")
             client.close()
             return True
@@ -231,9 +232,8 @@ def build_valid_document_match_stage():
 
 
 def load_worker(worker_id, task_queue, result_queue, column_map):
-    client = build_mongo_client()
-    db = client[DB_NAME]
-    raw_col = db[RAW_COLLECTION]
+    client = None
+    raw_col = None
 
     rows_seen = 0
     rows_inserted = 0
@@ -244,6 +244,17 @@ def load_worker(worker_id, task_queue, result_queue, column_map):
             payload = task_queue.get()
             if payload is None:
                 break
+
+            if client is None:
+                client = MongoClient(
+                    "mongodb://127.0.0.1:27117/",
+                    serverSelectionTimeoutMS=60000,
+                    connectTimeoutMS=30000,
+                    socketTimeoutMS=60000,
+                    retryWrites=True,
+                )
+                db = client[DB_NAME]
+                raw_col = db[RAW_COLLECTION]
 
             for row in payload:
                 rows_seen += 1
@@ -306,7 +317,8 @@ def load_worker(worker_id, task_queue, result_queue, column_map):
             flush_insert_many(raw_col, docs_batch)
             rows_inserted += len(docs_batch)
     finally:
-        client.close()
+        if client:
+            client.close()
         result_queue.put((worker_id, rows_seen, rows_inserted))
 
 
@@ -323,6 +335,7 @@ def phase1_load_raw(input_files, column_map, num_workers):
         )
         p.start()
         workers.append(p)
+        time.sleep(2)
 
     total_rows = 0
     batch = []
