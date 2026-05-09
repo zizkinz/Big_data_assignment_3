@@ -13,5 +13,5 @@ SHARD_KEY_TYPE = "hashed"  # Use hashed shard key for even distribution
 
 # Data Processing Configuration
 CSV_PATH = "C:/Users/avark/OneDrive/Desktop/University/Master's degree/2 Semester/Big Data Anlysis/Task 3/AIS_DATA/aisdk-2026-04-18.csv"
-BATCH_SIZE = 50_000
-MAX_ROWS = None
+BATCH_SIZE = 2_000
+MAX_ROWS = 100

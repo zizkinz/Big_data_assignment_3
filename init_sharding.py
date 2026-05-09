@@ -15,7 +15,7 @@ def wait_for_mongo(uri, timeout=60, retries=30):
             client = MongoClient(uri, directConnection=True, serverSelectionTimeoutMS=5000)
             client.admin.command('ping')
             client.close()
-            print(f"✓ Connected to {uri}")
+            print(f"Connected to {uri}")
             return True
         except (ServerSelectionTimeoutError, ConnectionFailure, Exception) as e:
             print(f"Attempt {attempt + 1}/{retries}: Waiting for MongoDB at {uri}...")
@@ -34,15 +34,15 @@ def init_replica_set(mongod_uri, replica_set_name, members):
     
     try:
         admin_db.command("replSetInitiate", config)
-        print(f"✓ Replica set '{replica_set_name}' initiated")
+        print(f"Replica set '{replica_set_name}' initiated")
         time.sleep(5)  # Wait for replica set to initialize
         return True
     except OperationFailure as e:
         if "already initialized" in str(e):
-            print(f"✓ Replica set '{replica_set_name}' already initialized")
+            print(f"Replica set '{replica_set_name}' already initialized")
             return True
         else:
-            print(f"✗ Error initializing replica set '{replica_set_name}': {e}")
+            print(f"Error initializing replica set '{replica_set_name}': {e}")
             return False
     finally:
         client.close()
@@ -54,14 +54,14 @@ def add_shard(mongos_uri, shard_uri, shard_name):
     
     try:
         result = admin_db.command("addShard", shard_uri, name=shard_name)
-        print(f"✓ Shard '{shard_name}' added: {result}")
+        print(f"Shard '{shard_name}' added: {result}")
         return True
     except OperationFailure as e:
         if "already exists" in str(e):
-            print(f"✓ Shard '{shard_name}' already exists")
+            print(f"Shard '{shard_name}' already exists")
             return True
         else:
-            print(f"✗ Error adding shard '{shard_name}': {e}")
+            print(f"Error adding shard '{shard_name}': {e}")
             return False
     finally:
         client.close()
@@ -73,14 +73,14 @@ def enable_sharding(mongos_uri, db_name):
     
     try:
         result = admin_db.command("enableSharding", db_name)
-        print(f"✓ Sharding enabled for database '{db_name}'")
+        print(f"Sharding enabled for database '{db_name}'")
         return True
     except OperationFailure as e:
         if "already enabled" in str(e):
-            print(f"✓ Sharding already enabled for database '{db_name}'")
+            print(f"Sharding already enabled for database '{db_name}'")
             return True
         else:
-            print(f"✗ Error enabling sharding for '{db_name}': {e}")
+            print(f"Error enabling sharding for '{db_name}': {e}")
             return False
     finally:
         client.close()
@@ -93,10 +93,10 @@ def create_shard_index(mongos_uri, db_name, collection_name, shard_key):
     
     try:
         collection.create_index(shard_key)
-        print(f"✓ Index created on {shard_key}")
+        print(f"Index created on {shard_key}")
         return True
     except Exception as e:
-        print(f"✗ Error creating index: {e}")
+        print(f"Error creating index: {e}")
         return False
     finally:
         client.close()
@@ -110,14 +110,14 @@ def shard_collection(mongos_uri, db_name, collection_name, shard_key):
     
     try:
         result = admin_db.command("shardCollection", collection_ns, key=shard_key)
-        print(f"✓ Collection '{collection_ns}' sharded with key {shard_key}")
+        print(f"Collection '{collection_ns}' sharded with key {shard_key}")
         return True
     except OperationFailure as e:
         if "already sharded" in str(e):
-            print(f"✓ Collection '{collection_ns}' already sharded")
+            print(f"Collection '{collection_ns}' already sharded")
             return True
         else:
-            print(f"✗ Error sharding collection: {e}")
+            print(f"Error sharding collection: {e}")
             return False
     finally:
         client.close()

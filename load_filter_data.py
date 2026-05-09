@@ -207,6 +207,29 @@ def flush_insert_many(collection, docs):
         collection.insert_many(docs, ordered=False)
 
 
+def iter_chunks(values, chunk_size):
+    for start in range(0, len(values), chunk_size):
+        yield values[start:start + chunk_size]
+
+
+def build_valid_document_match_stage():
+    return {
+        "$match": {
+            "mmsi": {"$type": "number", "$ne": None},
+            "lat": {"$type": "number", "$gte": -90, "$lte": 90},
+            "lon": {"$type": "number", "$gte": -180, "$lte": 180},
+            "nav_status": {
+                "$exists": True,
+                "$nin": [None, "", "Unknown", "Undefined", "not available"]
+            },
+            "rot": {"$type": "number", "$gte": -127, "$lte": 127, "$ne": -128},
+            "sog": {"$type": "number", "$gte": 0, "$lt": 102.3},
+            "cog": {"$type": "number", "$gte": 0, "$lt": 360},
+            "heading": {"$type": "number", "$gte": 0, "$lte": 359, "$ne": 511},
+        }
+    }
+
+
 def load_worker(worker_id, task_queue, result_queue, column_map):
     client = build_mongo_client()
     db = client[DB_NAME]
@@ -216,29 +239,17 @@ def load_worker(worker_id, task_queue, result_queue, column_map):
     rows_inserted = 0
     docs_batch = []
 
-    while True:
-        payload = task_queue.get()
-        if payload is None:
-            break
+    try:
+        while True:
+            payload = task_queue.get()
+            if payload is None:
+                break
 
-        for row in payload:
-            rows_seen += 1
+            for row in payload:
+                rows_seen += 1
 
-            if is_valid_row(
-                row,
-                column_map["mmsi"],
-                column_map["lat"],
-                column_map["lon"],
-                column_map["nav_status"],
-                column_map["rot"],
-                column_map["sog"],
-                column_map["cog"],
-                column_map["heading"],
-            ):
-                doc = row_to_document(
+                if is_valid_row(
                     row,
-                    column_map["timestamp"],
-                    column_map["mobile_type"],
                     column_map["mmsi"],
                     column_map["lat"],
                     column_map["lon"],
@@ -247,43 +258,56 @@ def load_worker(worker_id, task_queue, result_queue, column_map):
                     column_map["sog"],
                     column_map["cog"],
                     column_map["heading"],
-                    column_map["imo"],
-                    column_map["callsign"],
-                    column_map["name"],
-                    column_map["ship_type"],
-                    column_map["cargo_type"],
-                    column_map["width"],
-                    column_map["length"],
-                    column_map["pos_fix_type"],
-                    column_map["draught"],
-                    column_map["destination"],
-                    column_map["eta"],
-                    column_map["data_source_type"],
-                    column_map["a"],
-                    column_map["b"],
-                    column_map["c"],
-                    column_map["d"],
-                )
-
-                if (
-                    doc["ts"] is not None
-                    and doc["mmsi"] is not None
-                    and doc["lat"] is not None
-                    and doc["lon"] is not None
                 ):
-                    docs_batch.append(doc)
+                    doc = row_to_document(
+                        row,
+                        column_map["timestamp"],
+                        column_map["mobile_type"],
+                        column_map["mmsi"],
+                        column_map["lat"],
+                        column_map["lon"],
+                        column_map["nav_status"],
+                        column_map["rot"],
+                        column_map["sog"],
+                        column_map["cog"],
+                        column_map["heading"],
+                        column_map["imo"],
+                        column_map["callsign"],
+                        column_map["name"],
+                        column_map["ship_type"],
+                        column_map["cargo_type"],
+                        column_map["width"],
+                        column_map["length"],
+                        column_map["pos_fix_type"],
+                        column_map["draught"],
+                        column_map["destination"],
+                        column_map["eta"],
+                        column_map["data_source_type"],
+                        column_map["a"],
+                        column_map["b"],
+                        column_map["c"],
+                        column_map["d"],
+                    )
 
-                if len(docs_batch) >= BATCH_SIZE:
-                    flush_insert_many(raw_col, docs_batch)
-                    rows_inserted += len(docs_batch)
-                    docs_batch = []
+                    if (
+                        doc["ts"] is not None
+                        and doc["mmsi"] is not None
+                        and doc["lat"] is not None
+                        and doc["lon"] is not None
+                    ):
+                        docs_batch.append(doc)
 
-    if docs_batch:
-        flush_insert_many(raw_col, docs_batch)
-        rows_inserted += len(docs_batch)
+                    if len(docs_batch) >= BATCH_SIZE:
+                        flush_insert_many(raw_col, docs_batch)
+                        rows_inserted += len(docs_batch)
+                        docs_batch = []
 
-    client.close()
-    result_queue.put((worker_id, rows_seen, rows_inserted))
+        if docs_batch:
+            flush_insert_many(raw_col, docs_batch)
+            rows_inserted += len(docs_batch)
+    finally:
+        client.close()
+        result_queue.put((worker_id, rows_seen, rows_inserted))
 
 
 def phase1_load_raw(input_files, column_map, num_workers):
@@ -346,89 +370,51 @@ def phase2_build_clean_with_aggregation():
 
     clean_col.drop()
 
-    pipeline = [
-        {
-            "$match": {
-                "mmsi": {"$type": "number", "$ne": None},
-                "lat": {"$type": "number", "$gte": -90, "$lte": 90},
-                "lon": {"$type": "number", "$gte": -180, "$lte": 180},
-                "nav_status": {
-                    "$exists": True,
-                    "$nin": [None, "", "Unknown", "Undefined", "not available"]
+    valid_mmsis = [
+        doc["_id"]
+        for doc in raw_col.aggregate(
+            [
+                build_valid_document_match_stage(),
+                {
+                    "$group": {
+                        "_id": "$mmsi",
+                        "count": {"$sum": 1}
+                    }
                 },
-                "rot": {"$type": "number", "$gte": -127, "$lte": 127, "$ne": -128},
-                "sog": {"$type": "number", "$gte": 0, "$lt": 102.3},
-                "cog": {"$type": "number", "$gte": 0, "$lt": 360},
-                "heading": {"$type": "number", "$gte": 0, "$lte": 359, "$ne": 511},
-            }
-        },
-        {
-            "$group": {
-                "_id": "$mmsi",
-                "count": {"$sum": 1},
-                "docs": {"$push": "$$ROOT"}
-            }
-        },
-        {
-            "$match": {
-                "count": {"$gte": 100}
-            }
-        },
-        {
-            "$unwind": "$docs"
-        },
-        {
-            "$replaceRoot": {
-                "newRoot": "$docs"
-            }
-        },
-        {
-            "$merge": {
-                "into": CLEAN_COLLECTION,
-                "whenMatched": "replace",
-                "whenNotMatched": "insert"
-            }
-        }
+                {
+                    "$match": {
+                        "count": {"$gte": 100}
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 1
+                    }
+                },
+            ],
+            allowDiskUse=True,
+        )
+        if doc.get("_id") is not None
     ]
 
-    raw_col.aggregate(pipeline, allowDiskUse=True)
+    for chunk in iter_chunks(valid_mmsis, 1_000):
+        batch = []
+        cursor = raw_col.find({"mmsi": {"$in": chunk}})
 
-    valid_vessels = len(list(raw_col.aggregate([
-        {
-            "$match": {
-                "mmsi": {"$type": "number", "$ne": None},
-                "lat": {"$type": "number", "$gte": -90, "$lte": 90},
-                "lon": {"$type": "number", "$gte": -180, "$lte": 180},
-                "nav_status": {
-                    "$exists": True,
-                    "$nin": [None, "", "Unknown", "Undefined", "not available"]
-                },
-                "rot": {"$type": "number", "$gte": -127, "$lte": 127, "$ne": -128},
-                "sog": {"$type": "number", "$gte": 0, "$lt": 102.3},
-                "cog": {"$type": "number", "$gte": 0, "$lt": 360},
-                "heading": {"$type": "number", "$gte": 0, "$lte": 359, "$ne": 511},
-            }
-        },
-        {
-            "$group": {
-                "_id": "$mmsi",
-                "count": {"$sum": 1}
-            }
-        },
-        {
-            "$match": {
-                "count": {"$gte": 100}
-            }
-        },
-        {
-            "$count": "vessel_count"
-        }
-    ], allowDiskUse=True)))
+        for doc in cursor:
+            batch.append(doc)
+
+            if len(batch) >= BATCH_SIZE:
+                flush_insert_many(clean_col, batch)
+                batch = []
+
+        if batch:
+            flush_insert_many(clean_col, batch)
 
     clean_docs = clean_col.count_documents({})
 
     client.close()
-    return valid_vessels, clean_docs
+    return len(valid_mmsis), clean_docs
 
 
 if __name__ == "__main__":
