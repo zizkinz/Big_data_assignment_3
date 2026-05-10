@@ -13,5 +13,5 @@ SHARD_KEY_TYPE = "hashed"  # Use hashed shard key for even distribution
 
 # Data Processing Configuration
 CSV_PATH = "AIS_DATA/aisdk-2026-04-18.csv"
-BATCH_SIZE = 1000
-MAX_ROWS = None
+BATCH_SIZE = 10_000
+MAX_ROWS = 1_000_000

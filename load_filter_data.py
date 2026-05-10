@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import csv
 import math
 import multiprocessing as mp
@@ -6,7 +8,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING
+from pymongo.errors import BulkWriteError
 
 from config import (
     MONGO_URI,
@@ -23,13 +26,15 @@ SEQUENCE_INVALID = {
 }
 MMSI_REGEX = re.compile(r"^\d{9}$")
 
+TEMP_VALID_MMSI_COLLECTION = "valid_mmsi_tmp"
+
 
 def build_mongo_client():
     return MongoClient(
-        "mongodb://127.0.0.1:27117/",  # hardcoded to bypass localhost DNS issue
+        MONGO_URI,
         serverSelectionTimeoutMS=60000,
-        connectTimeoutMS=30000,
-        socketTimeoutMS=60000,
+        connectTimeoutMS=40000,
+        socketTimeoutMS=600000,
         retryWrites=True,
     )
 
@@ -38,7 +43,7 @@ def wait_for_mongo(timeout_seconds=120, poll_seconds=5):
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         try:
-            client = MongoClient('mongodb://127.0.0.1:27117/', serverSelectionTimeoutMS=10000)
+            client = build_mongo_client()
             client.admin.command("ping")
             client.close()
             return True
@@ -204,13 +209,13 @@ def row_to_document(
 
 
 def flush_insert_many(collection, docs):
-    if docs:
+    if not docs:
+        return
+    try:
         collection.insert_many(docs, ordered=False)
-
-
-def iter_chunks(values, chunk_size):
-    for start in range(0, len(values), chunk_size):
-        yield values[start:start + chunk_size]
+    except BulkWriteError as e:
+        write_errors = e.details.get("writeErrors", [])
+        print(f"Bulk write warning: {len(write_errors)} row(s) failed in one batch")
 
 
 def build_valid_document_match_stage():
@@ -231,6 +236,17 @@ def build_valid_document_match_stage():
     }
 
 
+def build_valid_document_match_stage_for_partition(worker_id, num_workers):
+    stage = build_valid_document_match_stage()
+    stage["$match"]["$expr"] = {
+        "$eq": [
+            {"$mod": ["$mmsi", num_workers]},
+            worker_id
+        ]
+    }
+    return stage
+
+
 def load_worker(worker_id, task_queue, result_queue, column_map):
     client = None
     raw_col = None
@@ -246,13 +262,7 @@ def load_worker(worker_id, task_queue, result_queue, column_map):
                 break
 
             if client is None:
-                client = MongoClient(
-                    "mongodb://127.0.0.1:27117/",
-                    serverSelectionTimeoutMS=60000,
-                    connectTimeoutMS=30000,
-                    socketTimeoutMS=60000,
-                    retryWrites=True,
-                )
+                client = build_mongo_client()
                 db = client[DB_NAME]
                 raw_col = db[RAW_COLLECTION]
 
@@ -335,7 +345,6 @@ def phase1_load_raw(input_files, column_map, num_workers):
         )
         p.start()
         workers.append(p)
-        time.sleep(2)
 
     total_rows = 0
     batch = []
@@ -371,63 +380,155 @@ def phase1_load_raw(input_files, column_map, num_workers):
 
     total_seen = sum(x[1] for x in stats)
     total_inserted = sum(x[2] for x in stats)
-
     return total_rows, total_seen, total_inserted
 
 
-def phase2_build_clean_with_aggregation():
+def ensure_phase2_indexes():
+    client = build_mongo_client()
+    db = client[DB_NAME]
+
+    db[TEMP_VALID_MMSI_COLLECTION].create_index([("_id", ASCENDING)])
+    db[CLEAN_COLLECTION].create_index([("mmsi", ASCENDING)])
+    db[CLEAN_COLLECTION].create_index([("mmsi", ASCENDING), ("ts", ASCENDING)])
+
+    client.close()
+
+
+def phase2_stage1_valid_mmsi_worker(worker_id, num_workers, result_queue):
+    client = build_mongo_client()
+    db = client[DB_NAME]
+    raw_col = db[RAW_COLLECTION]
+
+    pipeline = [
+        build_valid_document_match_stage_for_partition(worker_id, num_workers),
+        {
+            "$group": {
+                "_id": "$mmsi",
+                "count": {"$sum": 1}
+            }
+        },
+        {
+            "$match": {
+                "count": {"$gte": 100}
+            }
+        },
+        {
+            "$merge": {
+                "into": TEMP_VALID_MMSI_COLLECTION,
+                "on": "_id",
+                "whenMatched": "keepExisting",
+                "whenNotMatched": "insert"
+            }
+        }
+    ]
+
+    raw_col.aggregate(pipeline, allowDiskUse=True)
+    client.close()
+    result_queue.put(worker_id)
+
+
+def phase2_stage1_build_valid_mmsi_temp(num_workers=3):
+    ctx = mp.get_context("spawn")
+    result_queue = ctx.SimpleQueue()
+
+    client = build_mongo_client()
+    db = client[DB_NAME]
+    db[TEMP_VALID_MMSI_COLLECTION].drop()
+    client.close()
+
+    ensure_phase2_indexes()
+
+    workers = []
+    for worker_id in range(num_workers):
+        p = ctx.Process(
+            target=phase2_stage1_valid_mmsi_worker,
+            args=(worker_id, num_workers, result_queue)
+        )
+        p.start()
+        workers.append(p)
+
+    finished = [result_queue.get() for _ in range(num_workers)]
+
+    for p in workers:
+        p.join()
+
+    client = build_mongo_client()
+    valid_vessels = client[DB_NAME][TEMP_VALID_MMSI_COLLECTION].count_documents({})
+    client.close()
+
+    return finished, valid_vessels
+
+
+def process_mmsi_chunk(raw_col, clean_col, chunk):
+    batch = []
+    inserted = 0
+    cursor = raw_col.find({"mmsi": {"$in": chunk}}, no_cursor_timeout=True)
+
+    try:
+        for doc in cursor:
+            batch.append(doc)
+            if len(batch) >= BATCH_SIZE:
+                flush_insert_many(clean_col, batch)
+                inserted += len(batch)
+                batch = []
+    finally:
+        cursor.close()
+
+    if batch:
+        flush_insert_many(clean_col, batch)
+        inserted += len(batch)
+
+    return inserted
+
+
+def phase2_stage2_copy_clean_from_temp(chunk_size=5000):
     client = build_mongo_client()
     db = client[DB_NAME]
     raw_col = db[RAW_COLLECTION]
     clean_col = db[CLEAN_COLLECTION]
+    temp_col = db[TEMP_VALID_MMSI_COLLECTION]
 
     clean_col.drop()
+    ensure_phase2_indexes()
 
-    valid_mmsis = [
-        doc["_id"]
-        for doc in raw_col.aggregate(
-            [
-                build_valid_document_match_stage(),
-                {
-                    "$group": {
-                        "_id": "$mmsi",
-                        "count": {"$sum": 1}
-                    }
-                },
-                {
-                    "$match": {
-                        "count": {"$gte": 100}
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 1
-                    }
-                },
-            ],
-            allowDiskUse=True,
-        )
-        if doc.get("_id") is not None
-    ]
+    inserted = 0
+    valid_mmsi_count = 0
+    chunk = []
 
-    for chunk in iter_chunks(valid_mmsis, 1_000):
-        batch = []
-        cursor = raw_col.find({"mmsi": {"$in": chunk}})
+    cursor = temp_col.find({}, {"_id": 1}, no_cursor_timeout=True)
 
+    try:
         for doc in cursor:
-            batch.append(doc)
+            chunk.append(doc["_id"])
+            valid_mmsi_count += 1
 
-            if len(batch) >= BATCH_SIZE:
-                flush_insert_many(clean_col, batch)
-                batch = []
+            if len(chunk) >= chunk_size:
+                inserted += process_mmsi_chunk(raw_col, clean_col, chunk)
+                chunk = []
 
-        if batch:
-            flush_insert_many(clean_col, batch)
-
-    clean_docs = clean_col.count_documents({})
+        if chunk:
+            inserted += process_mmsi_chunk(raw_col, clean_col, chunk)
+    finally:
+        cursor.close()
 
     client.close()
-    return len(valid_mmsis), clean_docs
+    return valid_mmsi_count, inserted
+
+
+def phase2_build_clean_safer(num_workers=3, chunk_size=5000):
+    finished_workers, valid_vessels_stage1 = phase2_stage1_build_valid_mmsi_temp(
+        num_workers=num_workers
+    )
+    valid_vessels_stage2, clean_docs = phase2_stage2_copy_clean_from_temp(
+        chunk_size=chunk_size
+    )
+
+    client = build_mongo_client()
+    db = client[DB_NAME]
+    db[TEMP_VALID_MMSI_COLLECTION].drop()
+    client.close()
+
+    return finished_workers, valid_vessels_stage1, valid_vessels_stage2, clean_docs
 
 
 if __name__ == "__main__":
@@ -435,9 +536,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--cores", type=int, default=max(1, min(4, mp.cpu_count() - 1)))
+    parser.add_argument("--phase2-workers", type=int, default=3)
+    parser.add_argument("--phase2-chunk-size", type=int, default=5000)
     args = parser.parse_args()
 
     num_workers = args.cores
+    phase2_workers = args.phase2_workers
+    phase2_chunk_size = args.phase2_chunk_size
 
     BASE_DIR = Path(__file__).resolve().parent
     DATA_DIR = BASE_DIR / "AIS_DATA"
@@ -479,12 +584,22 @@ if __name__ == "__main__":
         "d": "D",
     }
 
-    print(f"System has {mp.cpu_count()} cores. Using {num_workers} worker processes.")
-    print(f"Unified batch size from config: {BATCH_SIZE}")
+    print(f"System has {mp.cpu_count()} cores. Using {num_workers} load worker processes.")
+    print(f"Phase 2 will use {phase2_workers} aggregation workers.")
+    print(f"Phase 2 chunk size: {phase2_chunk_size}")
+    print(f"Mongo URI: {MONGO_URI}")
+    print(f"Batch size: {BATCH_SIZE}")
 
-    print(f"Waiting for MongoDB at {MONGO_URI}...")
+    print(f"Waiting for MongoDB at {MONGO_URI} ...")
     if not wait_for_mongo():
         raise RuntimeError(f"MongoDB is not reachable at {MONGO_URI}")
+
+    client = build_mongo_client()
+    db = client[DB_NAME]
+    db[RAW_COLLECTION].drop()
+    db[CLEAN_COLLECTION].drop()
+    db[TEMP_VALID_MMSI_COLLECTION].drop()
+    client.close()
 
     start_time1 = time.perf_counter()
     total_rows_read, total_seen_p1, total_inserted_p1 = phase1_load_raw(
@@ -501,12 +616,16 @@ if __name__ == "__main__":
     )
 
     start_time2 = time.perf_counter()
-    valid_vessels, clean_docs = phase2_build_clean_with_aggregation()
+    finished_workers, valid_vessels_stage1, valid_vessels_stage2, clean_docs = phase2_build_clean_safer(
+        num_workers=phase2_workers,
+        chunk_size=phase2_chunk_size,
+    )
     end_time2 = time.perf_counter()
 
     print(
-        f"Phase 2 complete. Aggregation kept vessels with >=100 rows. "
-        f"Valid vessel groups: {valid_vessels:,}. "
+        f"Phase 2 complete. Finished aggregation workers: {sorted(finished_workers)}. "
+        f"Valid vessel groups in temp stage: {valid_vessels_stage1:,}. "
+        f"Valid vessel groups copied to clean stage: {valid_vessels_stage2:,}. "
         f"Documents written into {CLEAN_COLLECTION}: {clean_docs:,}. "
         f"Took {end_time2 - start_time2:.2f} seconds."
     )

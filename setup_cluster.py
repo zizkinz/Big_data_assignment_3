@@ -23,7 +23,7 @@ def main():
     # Step 1: Start Docker containers
     if not run_command(
         "docker-compose up -d",
-        "Step 1/4: Starting MongoDB cluster containers..."
+        "Step 1/6: Starting MongoDB cluster containers..."
     ):
         print("\nFailed to start Docker containers")
         sys.exit(1)
@@ -34,7 +34,7 @@ def main():
     # Step 2: Initialize replica sets and sharding
     if not run_command(
         "python init_sharding.py",
-        "Step 2/4: Initializing replica sets and sharding..."
+        "Step 2/6: Initializing replica sets and sharding..."
     ):
         print("\nFailed to initialize sharding")
         sys.exit(1)
@@ -42,22 +42,44 @@ def main():
     print("Waiting for sharding to stabilize (10 seconds)...")
     time.sleep(10)
     
-    # Step 3: Create indexes
-    if not run_command(
-        "python create_indicies.py",
-        "Step 3/4: Creating database indexes..."
-    ):
-        print("\nFailed to create indexes")
-        sys.exit(1)
+
     
-    # Step 4: Load data
+    # Step 3: Load data
     if not run_command(
         "python load_filter_data.py",
-        "Step 4/4: Loading and filtering AIS data..."
+        "Step 3/6: Loading and filtering AIS data..."
     ):
         print("\nFailed to load data")
         sys.exit(1)
-    
+
+
+    # Step 4: Create indexes
+    if not run_command(
+        "python create_indicies.py",
+        "Step 4/6: Creating database indexes..."
+    ):
+        print("\nFailed to create indexes")
+        sys.exit(1)
+
+    # Step 5: Calculate delta t
+    if not run_command(
+        "python delta_t.py",
+        "Step 5/6: Calculating delta values..."
+    ):
+        print("\nFailed to calculate delta values")
+        sys.exit(1)
+
+    # Step 6: Drawaing histogram
+    if not run_command(
+        "python plot_histogram.py",
+        "Step 6/6: Plotting histogram..."
+    ):
+        print("\nFailed to plot histogram")
+        sys.exit(1)
+
+
+
+
 
 if __name__ == "__main__":
     main()
