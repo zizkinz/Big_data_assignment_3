@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Initialize MongoDB sharding and replica sets.
-
-Run this after all MongoDB containers are up.
-Assumes:
-- 3 config servers
-- 3 shard replica sets, each with 3 members
-- 1 mongos router
-"""
 
 import time
 from pymongo import MongoClient
@@ -77,10 +68,10 @@ def wait_for_mongo(uri, retries=60, sleep_seconds=2, direct=True):
             )
             client.admin.command("ping")
             client.close()
-            print(f"[OK] Connected to {uri}")
+            print(f"Connected to {uri}")
             return True
         except (ServerSelectionTimeoutError, ConnectionFailure, Exception):
-            print(f"[{attempt}/{retries}] Waiting for MongoDB at {uri} ...")
+            print(f"[{attempt}/{retries}] Waiting for MongoDB at {uri}")
             time.sleep(sleep_seconds)
     return False
 
@@ -98,11 +89,11 @@ def init_replica_set(seed_uri, replica_set_name, members, configsvr=False):
 
     try:
         admin.command("replSetInitiate", config)
-        print(f"[OK] Replica set '{replica_set_name}' initiated")
+        print(f"Replica set '{replica_set_name}' initiated")
     except OperationFailure as e:
         msg = str(e)
         if "already initialized" in msg or "already been initialized" in msg:
-            print(f"[OK] Replica set '{replica_set_name}' already initialized")
+            print(f"Replica set '{replica_set_name}' already initialized")
         else:
             client.close()
             raise
@@ -123,12 +114,12 @@ def wait_for_replica_set(seed_uri, retries=60, sleep_seconds=2):
             hello = client.admin.command("hello")
             client.close()
             if hello.get("setName"):
-                print(f"[OK] Replica set ready for {seed_uri} (primary: {hello.get('primary')})")
+                print(f"Replica set ready for {seed_uri} (primary: {hello.get('primary')})")
                 return True
         except Exception:
             pass
 
-        print(f"[{attempt}/{retries}] Waiting for replica set on {seed_uri} ...")
+        print(f"[{attempt}/{retries}] Waiting for replica set on {seed_uri}")
         time.sleep(sleep_seconds)
 
     return False
@@ -140,11 +131,11 @@ def add_shard(mongos_uri, shard_uri, shard_name):
 
     try:
         result = admin.command("addShard", shard_uri, name=shard_name)
-        print(f"[OK] Shard '{shard_name}' added: {result}")
+        print(f"Shard '{shard_name}' added: {result}")
     except OperationFailure as e:
         msg = str(e)
         if "already exists" in msg or "is already" in msg:
-            print(f"[OK] Shard '{shard_name}' already exists")
+            print(f"Shard '{shard_name}' already exists")
         else:
             client.close()
             raise
@@ -158,11 +149,11 @@ def enable_sharding(mongos_uri, db_name):
 
     try:
         result = admin.command("enableSharding", db_name)
-        print(f"[OK] Sharding enabled for database '{db_name}': {result}")
+        print(f"Sharding enabled for database '{db_name}': {result}")
     except OperationFailure as e:
         msg = str(e)
         if "already enabled" in msg:
-            print(f"[OK] Sharding already enabled for database '{db_name}'")
+            print(f"Sharding already enabled for database '{db_name}'")
         else:
             client.close()
             raise
@@ -176,11 +167,11 @@ def shard_collection(mongos_uri, namespace, shard_key):
 
     try:
         result = admin.command("shardCollection", namespace, key=shard_key)
-        print(f"[OK] Collection '{namespace}' sharded with key {shard_key}: {result}")
+        print(f"Collection '{namespace}' sharded with key {shard_key}: {result}")
     except OperationFailure as e:
         msg = str(e)
         if "already sharded" in msg or "is already sharded" in msg:
-            print(f"[OK] Collection '{namespace}' already sharded")
+            print(f"Collection '{namespace}' already sharded")
         else:
             client.close()
             raise
@@ -200,20 +191,17 @@ def print_sharding_status(mongos_uri):
 
 
 def main():
-    print("=" * 72)
-    print("MongoDB Sharding + Replica Set Initialization")
-    print("=" * 72)
 
-    print("\n[1/8] Waiting for config server seed...")
+    print("\nWaiting for config server seed")
     if not wait_for_mongo("mongodb://localhost:27019", direct=True):
         raise RuntimeError("Config server seed not reachable")
 
-    print("\n[2/8] Waiting for shard seeds...")
+    print("\nWaiting for shard seeds")
     for shard in SHARDS:
         if not wait_for_mongo(shard["seed_uri"], direct=True):
             raise RuntimeError(f"Shard seed not reachable: {shard['seed_uri']}")
 
-    print("\n[3/8] Initializing config replica set...")
+    print("\nInitializing config replica set")
     init_replica_set(
         seed_uri="mongodb://localhost:27019",
         replica_set_name=CONFIG_RS_NAME,
@@ -221,7 +209,7 @@ def main():
         configsvr=True,
     )
 
-    print("\n[4/8] Initializing shard replica sets...")
+    print("\nInitializing shard replica sets")
     for shard in SHARDS:
         init_replica_set(
             seed_uri=shard["seed_uri"],
@@ -230,21 +218,21 @@ def main():
             configsvr=False,
         )
 
-    print("\n[5/8] Waiting for shard primaries...")
+    print("\nWaiting for shard primaries")
     for shard in SHARDS:
         if not wait_for_replica_set(shard["seed_uri"]):
             raise RuntimeError(f"Shard primary was not elected in time: {shard['rs_name']}")
 
-    print("\n[6/8] Waiting for mongos router...")
+    print("\nWaiting for mongos router")
     if not wait_for_mongo(MONGOS_URI, direct=False):
         raise RuntimeError("mongos is not reachable")
 
-    print("\n[7/8] Adding shards to the cluster...")
+    print("\nAdding shards to the cluster")
     for shard in SHARDS:
         add_shard(MONGOS_URI, shard["add_shard_uri"], shard["shard_name"])
         time.sleep(1)
 
-    print("\n[8/8] Enabling sharding and sharding collections...")
+    print("\nEnabling sharding and sharding collections")
     enable_sharding(MONGOS_URI, DB_NAME)
 
     shard_collection(MONGOS_URI, f"{DB_NAME}.{RAW_COLLECTION}", {"mmsi": "hashed"})
@@ -252,9 +240,7 @@ def main():
 
     print_sharding_status(MONGOS_URI)
 
-    print("\n" + "=" * 72)
-    print("✓ Sharding setup complete")
-    print("=" * 72)
+    print("Sharding setup complete:")
     print(f"mongos: {MONGOS_URI}")
     print(f"Database: {DB_NAME}")
     print(f"Sharded collections: {RAW_COLLECTION}, {CLEAN_COLLECTION}")

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Quick start script to set up MongoDB sharding cluster
-Run: python setup_cluster.py
-"""
 
 import subprocess
 import time
@@ -23,23 +19,23 @@ def main():
     # Step 1: Start Docker containers
     if not run_command(
         "docker-compose up -d",
-        "Step 1/6: Starting MongoDB cluster containers..."
+        "Starting MongoDB cluster containers"
     ):
         print("\nFailed to start Docker containers")
         sys.exit(1)
     
-    print("Waiting for MongoDB services to be ready (30 seconds)...")
+    print("Waiting for MongoDB services to be ready (30 seconds)")
     time.sleep(30)
     
     # Step 2: Initialize replica sets and sharding
     if not run_command(
         "python init_sharding.py",
-        "Step 2/6: Initializing replica sets and sharding..."
+        "Initializing replica sets and sharding"
     ):
         print("\nFailed to initialize sharding")
         sys.exit(1)
     
-    print("Waiting for sharding to stabilize (10 seconds)...")
+    print("Waiting for sharding to stabilize (10 seconds)")
     time.sleep(10)
     
 
@@ -47,7 +43,7 @@ def main():
     # Step 3: Load data
     if not run_command(
         "python load_filter_data.py",
-        "Step 3/6: Loading and filtering AIS data..."
+        "Loading and filtering AIS data"
     ):
         print("\nFailed to load data")
         sys.exit(1)
@@ -56,7 +52,7 @@ def main():
     # Step 4: Create indexes
     if not run_command(
         "python create_indicies.py",
-        "Step 4/6: Creating database indexes..."
+        "Creating database indexes"
     ):
         print("\nFailed to create indexes")
         sys.exit(1)
@@ -64,7 +60,7 @@ def main():
     # Step 5: Calculate delta t
     if not run_command(
         "python delta_t.py",
-        "Step 5/6: Calculating delta values..."
+        "Calculating delta values"
     ):
         print("\nFailed to calculate delta values")
         sys.exit(1)
@@ -72,7 +68,7 @@ def main():
     # Step 6: Drawaing histogram
     if not run_command(
         "python plot_histogram.py",
-        "Step 6/6: Plotting histogram..."
+        "Plotting histogram"
     ):
         print("\nFailed to plot histogram")
         sys.exit(1)

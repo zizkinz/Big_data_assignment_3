@@ -585,12 +585,12 @@ if __name__ == "__main__":
     }
 
     print(f"System has {mp.cpu_count()} cores. Using {num_workers} load worker processes.")
-    print(f"Phase 2 will use {phase2_workers} aggregation workers.")
-    print(f"Phase 2 chunk size: {phase2_chunk_size}")
+    print(f"Will use {phase2_workers} aggregation workers.")
+    print(f"Chunk size: {phase2_chunk_size}")
     print(f"Mongo URI: {MONGO_URI}")
     print(f"Batch size: {BATCH_SIZE}")
 
-    print(f"Waiting for MongoDB at {MONGO_URI} ...")
+    print(f"Waiting for MongoDB at {MONGO_URI}")
     if not wait_for_mongo():
         raise RuntimeError(f"MongoDB is not reachable at {MONGO_URI}")
 
@@ -610,7 +610,7 @@ if __name__ == "__main__":
     end_time1 = time.perf_counter()
 
     print(
-        f"Phase 1 complete. Read {total_rows_read:,} CSV rows. "
+        f"Read {total_rows_read:,} CSV rows. "
         f"Workers processed {total_seen_p1:,} rows and inserted {total_inserted_p1:,} docs into {RAW_COLLECTION}. "
         f"Took {end_time1 - start_time1:.2f} seconds."
     )
@@ -623,7 +623,7 @@ if __name__ == "__main__":
     end_time2 = time.perf_counter()
 
     print(
-        f"Phase 2 complete. Finished aggregation workers: {sorted(finished_workers)}. "
+        f"Finished aggregation workers: {sorted(finished_workers)}. "
         f"Valid vessel groups in temp stage: {valid_vessels_stage1:,}. "
         f"Valid vessel groups copied to clean stage: {valid_vessels_stage2:,}. "
         f"Documents written into {CLEAN_COLLECTION}: {clean_docs:,}. "

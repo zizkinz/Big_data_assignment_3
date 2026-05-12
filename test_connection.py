@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-test_connection.py
-
-Runs a simple sharded-cluster failure test against an already running cluster.
-This version is hardcoded to stop the whole shard2 replica set, test connectivity,
-then restart it.
-
-Run directly from PyCharm:
-    python test_connection.py
-"""
 
 import subprocess
 import sys
@@ -19,9 +9,7 @@ from pymongo.errors import PyMongoError
 
 from config import MONGO_URI, DB_NAME, RAW_COLLECTION, CLEAN_COLLECTION
 
-# ---------------------------
-# Hardcoded test configuration
-# ---------------------------
+
 STOP_BALANCER = True
 RESTART_AFTER = True
 FAILURE_MODE = "shard"   # "member" or "shard"
@@ -99,7 +87,7 @@ def print_cluster_basics() -> None:
     try:
         client = build_client()
         hello = client.admin.command("hello")
-        print("\n=== Cluster Basics ===")
+        print("\nCluster Basics")
         print(f"hello.ok: {hello.get('ok')}")
         print(f"hello.msg: {hello.get('msg')}")
         print(f"isWritablePrimary: {hello.get('isWritablePrimary')}")
@@ -109,7 +97,7 @@ def print_cluster_basics() -> None:
 
 
 def try_basic_ops() -> None:
-    print("\n=== Basic Ops Test ===")
+    print("\nBasic Ops Test")
     client = None
     try:
         client = build_client()
@@ -136,7 +124,7 @@ def try_basic_ops() -> None:
 
 
 def try_targeted_ops() -> None:
-    print("\n=== Targeted Ops Test ===")
+    print("\nTargeted Ops Test")
     client = None
     try:
         client = build_client()
@@ -213,7 +201,7 @@ def restart_target() -> bool:
 
 
 def main():
-    print("=== MongoDB Sharded Cluster Failure Test ===")
+    print("MongoDB Sharded Cluster Failure Test")
     print(f"Mongo URI: {MONGO_URI}")
     print(f"Failure mode: {FAILURE_MODE}")
     print(f"Hardcoded target: {TARGET}")
@@ -227,19 +215,19 @@ def main():
     if STOP_BALANCER:
         stop_balancer()
 
-    print("\n=== Pre-failure checks ===")
+    print("\nPre-failure checks")
     try_basic_ops()
     try_targeted_ops()
 
-    print("\n=== Inducing failure ===")
+    print("\nInducing failure")
     if not stop_target():
         print("Failed to stop target.")
         sys.exit(1)
 
-    print("Waiting 15 seconds for cluster state to settle...")
+    print("Waiting 15 seconds for cluster state to settle")
     time.sleep(15)
 
-    print("\n=== Post-failure checks ===")
+    print("\nPost-failure checks")
     if wait_for_mongos(timeout_seconds=30, poll_seconds=3):
         print("mongos still reachable after failure.")
     else:
@@ -250,13 +238,13 @@ def main():
     try_targeted_ops()
 
     if RESTART_AFTER:
-        print("\n=== Restarting stopped target ===")
+        print("\nRestarting stopped target")
         if restart_target():
             print("Restart command issued successfully.")
-            print("Waiting 20 seconds for recovery...")
+            print("Waiting 20 seconds for recovery.")
             time.sleep(20)
 
-            print("\n=== Post-recovery checks ===")
+            print("\nPost-recovery checks")
             if wait_for_mongos(timeout_seconds=60, poll_seconds=3):
                 print("mongos reachable after recovery.")
             else:
@@ -271,7 +259,7 @@ def main():
     if STOP_BALANCER:
         start_balancer()
 
-    print("\n=== Test complete ===")
+    print("\nTest complete")
 
 
 if __name__ == "__main__":

@@ -117,7 +117,7 @@ if __name__ == "__main__":
     stats, delta_docs = compute_delta_parallel(num_workers=3)
     end_time = time.perf_counter()
 
-    print("Delta-t complete.")
+    print("Delta-t complete")
     print(f"Worker timings: {sorted(stats)}")
     print(f"Documents written into {DELTA_COLLECTION}: {delta_docs:,}")
     print(f"Took {end_time - start_time:.2f} seconds.")
