@@ -3,185 +3,137 @@ services:
   config1:
     image: mongo:latest
     container_name: config1
-    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb --wiredTigerCacheSizeGB 0.25
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb
     ports:
       - "27019:27019"
     volumes:
       - config1_data:/data/configdb
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   config2:
     image: mongo:latest
     container_name: config2
-    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb --wiredTigerCacheSizeGB 0.25
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb
     ports:
       - "27020:27019"
     volumes:
       - config2_data:/data/configdb
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   config3:
     image: mongo:latest
     container_name: config3
-    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb --wiredTigerCacheSizeGB 0.25
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all --dbpath /data/configdb
     ports:
       - "27021:27019"
     volumes:
       - config3_data:/data/configdb
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   # Shard 1 (with replica set)
   shard1-server1:
     image: mongo:latest
     container_name: shard1-server1
-    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27029:27017"
     volumes:
       - shard1_server1_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard1-server2:
     image: mongo:latest
     container_name: shard1-server2
-    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27018:27017"
     volumes:
       - shard1_server2_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard1-server3:
     image: mongo:latest
     container_name: shard1-server3
-    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard1ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27022:27017"
     volumes:
       - shard1_server3_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   # Shard 2 (with replica set)
   shard2-server1:
     image: mongo:latest
     container_name: shard2-server1
-    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27023:27017"
     volumes:
       - shard2_server1_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard2-server2:
     image: mongo:latest
     container_name: shard2-server2
-    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27024:27017"
     volumes:
       - shard2_server2_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard2-server3:
     image: mongo:latest
     container_name: shard2-server3
-    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard2ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27025:27017"
     volumes:
       - shard2_server3_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   # Shard 3 (with replica set)
   shard3-server1:
     image: mongo:latest
     container_name: shard3-server1
-    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27026:27017"
     volumes:
       - shard3_server1_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard3-server2:
     image: mongo:latest
     container_name: shard3-server2
-    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27027:27017"
     volumes:
       - shard3_server2_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   shard3-server3:
     image: mongo:latest
     container_name: shard3-server3
-    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db --wiredTigerCacheSizeGB 0.25
+    command: mongod --shardsvr --replSet shard3ReplSet --port 27017 --bind_ip_all --dbpath /data/db
     ports:
       - "27028:27017"
     volumes:
       - shard3_server3_data:/data/db
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 512m
  
   # MongoDB Router (mongos) - Entry point for clients
   mongos:
@@ -192,10 +144,6 @@ services:
       - "27117:27017"
     networks:
       - mongo_network
-    deploy:
-      resources:
-        limits:
-          memory: 1g
     depends_on:
       - config1
       - config2
